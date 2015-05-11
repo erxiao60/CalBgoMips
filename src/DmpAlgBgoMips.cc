@@ -6,12 +6,16 @@
 #include "DmpDataBuffer.h"
 #include "DmpBgoBase.h"
 #include "DmpParameterBgo.h"
+#include "DmpEvtBgoDyCoe.h"
 #include "TFile.h"
 #include "TH1.h"
+#include "TH1D.h"
 #include "TF1.h"
 #include "TROOT.h"
 #include "TStyle.h"
 #include "TMath.h"
+#include "TTree.h"
+#include "TCanvas.h"
 
 //-------------------------------------------------------------------
 //define laugaufun
@@ -88,9 +92,78 @@ bool DmpAlgBgoMips::Reset(){
 //-------------------------------------------------------------------
 DmpAlgBgoMips::~DmpAlgBgoMips(){
 }
+bool DmpAlgBgoMips::GetDyCoePar(){
+
+  memset(DyCoePar_58,0,sizeof(DyCoePar_58));
+  memset(DyCoePar_25,0,sizeof(DyCoePar_25));
+
+  TFile *fDyPar=new TFile("./DyCoe/DyCoePar.root");
+  if(fDyPar==0){
+    std::cout<<"Can not open DyCoe Par root file!"<<std::endl;
+    return false;
+  }
+  TTree *Dytree=(TTree*)fDyPar->Get("Calibration/Bgo");
+  TBranch *b_fBgoDyCoe;
+  DmpEvtBgoDyCoe *fBgoDyPar=new DmpEvtBgoDyCoe();
+
+  Dytree->SetBranchAddress("DyCoe",&fBgoDyPar,&b_fBgoDyCoe);
+  Dytree->GetEntry(0);
+  //prepare parameters
+  short gid=0,l=0,b=0,s=0;
+  short nPmts=(short)fBgoDyPar->GlobalPMTID.size();
+  for(short i=0;i<nPmts; ++i){
+    gid=fBgoDyPar->GlobalPMTID[i];
+    l=DmpBgoBase::GetLayerID(gid);
+    b=DmpBgoBase::GetBarID(gid);
+    s=DmpBgoBase::GetSideID(gid);
+    DyCoePar_58[l][b][s][0]=fBgoDyPar->Slp_Dy8vsDy5[i];
+    DyCoePar_58[l][b][s][1]=fBgoDyPar->Inc_Dy8vsDy5[i];
+    DyCoePar_25[l][b][s][0]=fBgoDyPar->Slp_Dy5vsDy2[i];
+    DyCoePar_25[l][b][s][1]=fBgoDyPar->Inc_Dy5vsDy2[i];
+   // std::cout<<"Layer:"<<l<<" Bar:"<<b<<" Side:"<<s<<std::endl;
+   // std::cout<<"***"<<DyCoePar_58[l][b][s][0]<<std::endl;
+  }
+  
+  delete Dytree;
+  delete fDyPar;
+  return true;
+}
+//-------------------------------------------------------------------
+bool DmpAlgBgoMips::GetMipsPar(){
+  TFile *fMipPar=new TFile("./MIPs/MIPsPar.root");
+  if(fMipPar==0){
+    std::cout<<"Can not open MIPs Par root file!"<<std::endl;
+    exit(0);
+  }
+  TTree *Miptree=(TTree*)fMipPar->Get("Calibration/Bgo");
+  TBranch *b_fBgoMip;
+  DmpEvtBgoMips *fBgoMipsP=new DmpEvtBgoMips();
+  Miptree->SetBranchAddress("Mips",&fBgoMipsP,&b_fBgoMip);
+  Miptree->GetEntry(0);
+  //prepare parameters
+  short gid=0,l=0,b=0,s=0;
+  short nBars=(short)fBgoMipsP->GlobalBarID.size();
+  for(short i=0;i<nBars;++i){
+    gid=fBgoMipsP->GlobalBarID[i];
+    l=DmpBgoBase::GetLayerID(gid);
+    b=DmpBgoBase::GetBarID(gid);
+    s=fBgoMipsP->BgoSide[i];//s=0,1,2
+    MipsPar[l][b][s][0]=fBgoMipsP->MPV[i];//using the maximum
+    MipsPar[l][b][s][1]=fBgoMipsP->Gsigma[i];
+    MipsPar[l][b][s][2]=fBgoMipsP->Lwidth[i];
+  }
+
+  //delete b_fBgoMip;
+  //delete fBgoMipsP;
+  //delete Miptree;
+  //delete fMipPar;
+  
+  //usage: QdcCoe[fGidOrder[gid]];//Quadratic Coefficients
+  //       Slope[...],Cst[...] are same.
+  return true;
+} 
 //-------------------------------------------------------------------
 bool DmpAlgBgoMips::Initialize(){
-//  gRootIOSvc->Set("OutData/FileName","./"+gRootIOSvc->GetInputFileName()+"_mip.root");
   // read input data
 // gDataBuffer->LinkRootFile("Event/Rdc/EventHeader",fEvtHeader);
 // gDataBuffer->LinkRootFile("Event/Rdc/Bgo",fBgoRaw);
@@ -114,19 +187,43 @@ bool DmpAlgBgoMips::Initialize(){
       for(short b=0;b<barNo;++b){
         char name[50];
         short gid=DmpBgoBase::ConstructGlobalBarID(l,b); 
-          sprintf(name,"BgoMips_L%02d_B%02d_S%02d",l,b,s); 
-    	  fMipsHist.insert(std::make_pair(gid,new TH1F(name,name,300,15,5100)));
+          sprintf(name,"BgoMips_L%02d_B%02d_S%02d",l,b,s);
+          if(l==0||l==13) 
+    	  fMipsHist.insert(std::make_pair(gid,new TH1F(name,name,160,15,4015)));
+          else if(s==0) 
+    	  fMipsHist.insert(std::make_pair(gid,new TH1F(name,name,160,15,4015)));
+          else if(s==1) 
+    	  fMipsHist.insert(std::make_pair(gid,new TH1F(name,name,200,5,2005)));
+          else if(s==2) 
+    	  fMipsHist.insert(std::make_pair(gid,new TH1F(name,name,200,5,3005)));
        }
      }
 	  std::cout<<std::endl;
      fSideMap.insert(std::make_pair(s,fMipsHist));
      fMipsHist.clear();
    }
+  // Get Pars
+ // if(!GetDyCoePar()){
+ // std::cout<<"Can not open DyCoe Par file!"<<std::endl;
+//  return false;
+//  }
+  if(!GetMipsPar()){
+  std::cout<<"Can not open Mips Par file!"<<std::endl;
+  return false;
+  }
+
  return true;
 } 
 
 //-------------------------------------------------------------------
 bool DmpAlgBgoMips::ProcessThisEvent(){
+ int timenow=fEvtHeader->GetSecond();
+//if(timenow<58519300||timenow>58525000){return false;}
+//if(timenow<58525000||timenow>58529000){return false;}
+//if(timenow<58529000||timenow>58533600){return false;}
+//if(timenow<58533600||timenow>58538200){return false;}
+//if(timenow<58538200||timenow>58541800){return false;}
+//  if(timenow<58541800){return false;}
     //check run mode
   if(fBgoRaw->GetRunMode()==2)
     return false;
@@ -150,9 +247,20 @@ bool DmpAlgBgoMips::ProcessThisEvent(){
 bool DmpAlgBgoMips::RawTrack(){
 //  Lmax=(Int_t*)malloc(20);
   double AdcBuffer[14][22][2];
+  double AdcBuffer_dy5[14][22][2];
   memset(AdcBuffer,0,sizeof(AdcBuffer));
+  memset(AdcBuffer_dy5,0,sizeof(AdcBuffer_dy5));
+
+//TEnergy Cut
+  double TEnergyS0=0.;
+  double TEnergyS1=0.;
+
+//Loop
   short gid=0,l=0,b=0,s=0,d=0;
   short nHits=0;
+  short LnHits[14];
+  memset(LnHits,0,sizeof(LnHits));
+
   double adc =0.;
   short nSignal = fBgoRaw->fGlobalDynodeID.size();
 //  std::cout<<"nSignal:"<<nSignal<<std::endl;
@@ -164,29 +272,57 @@ bool DmpAlgBgoMips::RawTrack(){
     s=DmpBgoBase::GetSideID(gid);
     d=DmpBgoBase::GetDynodeID(gid);
     if(b>=22){continue;}//spare channels
-     if(s==0&&d==8){//only check side 0;
-	nHits++;
-        if(adc>MaxAdc[l][0]){
-	MaxAdc[l][0]=adc;
-	MaxBar[l]=b;//0--21
+     if(d==8){//only dy8
+       if(s==0){//only check side 0;
+         TEnergyS0+=adc/MipsPar[l][b][s][0]*23;//MeV
+         LnHits[l]++;
+         nHits++;
+         if(adc>MaxAdc[l][0]){
+	   MaxAdc[l][0]=adc;
+	   MaxBar[l]=b;//0--21
+         }
        }
-      }
-    else{AdcBuffer[l][b][s]=adc;}
-     } //single event Loop end
+       else{AdcBuffer[l][b][s]=adc;
+       TEnergyS1+=adc/MipsPar[l][b][s][1]*23;//MeV
+       }
+     }
+     else if(d==5){
+       AdcBuffer_dy5[l][b][s]=adc;
+     }
+   } //single event Loop end
    for(short j=0;j<14;j++){
   MaxAdc[j][1]=AdcBuffer[j][MaxBar[j]][1];
   MaxAdc[j][2]=TMath::Sqrt(MaxAdc[j][0]*MaxAdc[j][1]);
   }
   //MIPs Tracker check
-  if(nHits<10||nHits>40){
+ // if(nHits<10||nHits>18){
+ //return false;
+ // }
+ /*short nDoubleHits=0;
+    short nZeroHits=0;
+    for(int ilayer=0;ilayer<14;ilayer++){
+    if(LnHits[ilayer]==0){nZeroHits++;}
+    if(LnHits[ilayer]==2){nDoubleHits++;}
+    if(LnHits[ilayer]>2){return false;}
+    }
+    if(nDoubleHits>=3||nZeroHits>=3){return false;}//only for parallel beam
+*/
+   //full track from top to bottom
+  if((MaxAdc[0][0]<50&&MaxAdc[1][0]<50)||(MaxAdc[12][0]<50&&MaxAdc[13][0]<50)) {
   return false;
   }
-  if((MaxAdc[0][0]<100&&MaxAdc[1][0]<100)||(MaxAdc[12][0]<100&&MaxAdc[13][0]<100)) {
-  return false;
-  }
-  for(int i=0;i<14;i++){
-  if(MaxAdc[i][0]>8000){return false;}
-  }
+  //Energy cut
+  if(TEnergyS1>5000||TEnergyS1<200){return false;}
+//  if(TMath::Abs(TEnergyS0/TEnergyS1-1.)>0.3){return false;}
+
+//  for(int i=0;i<14;i++){
+//    if(MaxAdc[i][0]>14000){return false;}
+//    double computedDy8=AdcBuffer_dy5[i][MaxBar[i]][0]*DyCoePar_58[i][MaxBar[i]][0][0]+DyCoePar_58[i][MaxBar[i]][0][1];
+//    if(TMath::Abs(computedDy8-MaxAdc[i][0])>1800.) {
+//      MaxAdc[i][MaxBar[i]]=0;
+//    }
+//  }
+
   return true;
 }   
 
@@ -199,13 +335,15 @@ bool DmpAlgBgoMips::RawTrack(){
   Long64_t nentries;
   Double_t *par_error;
   TF1 *myMIPs=new TF1("myMIPs",langaufun,0.,5800.,4);
+  TF1 *mylandau = new TF1("mylandau","[2]*TMath::Landau(x,[1],[0])",0,10000);
+//  TF1 *landau=new TF1("mylaudau","landau",0.,5800.);
   myMIPs->SetParNames("Width","MP","Area","GSigma");
   TFile *histFile = new TFile(histFileName.c_str(),"RECREATE");
   for(std::map<short,std::map<short,TH1F*> >::iterator aSide=fSideMap.begin();aSide!=fSideMap.end();++aSide){
     for(std::map<short,TH1F*>::iterator aHist=aSide->second.begin();aHist!=aSide->second.end();++aHist){
       mean=aHist->second->GetMean();
       nentries=aHist->second->GetEntries();
-      myMIPs->SetRange(mean*0.42,mean*2.0);
+      myMIPs->SetRange(mean*0.2,mean*2.0);
 	  //myMIPs->SetRange(par[1]-2.8*par[2],par[1]+6.50*par[2]);
 	   //myMIPs->SetParameters(par);
 	   // Once again, here are the Landau * Gaussian parameters:
@@ -217,19 +355,44 @@ bool DmpAlgBgoMips::RawTrack(){
       myMIPs->SetParLimits(1,mean*0.6,mean*1.1);
   //    myMIPs->SetParLimits(2,nentries*0.6,nentries*1.4);
       myMIPs->SetParameter(1,mean*0.8);
-      myMIPs->SetParameter(3,mean*0.3);
+      myMIPs->SetParameter(3,mean*0.1);
     //  myMIPs->SetParameter(2,nentries);
-      myMIPs->SetParameter(0,mean*80);
+      myMIPs->SetParameter(0,mean*0.1);
       aHist->second->Fit(myMIPs,"RQ");
       //fill MIPs event class
       fBgoMips->GlobalBarID.push_back(aHist->first);
       fBgoMips->BgoSide.push_back(aSide->first);
     //using maximum instead of MPV 
       myMIPs->GetParameters(par);
-      double peak=myMIPs->GetMaximumX(0.8*par[1],1.5*par[1]);
-      par[1]=peak;
-      myMIPs->SetParameters(par);
-      myMIPs->SetRange(par[1]*0.5,par[1]*3);
+      chis=myMIPs->GetChisquare();
+      double ndf=myMIPs->GetNDF();
+      if(chis/ndf>1.6){
+      myMIPs->SetParameter(1,mean*0.8);
+      myMIPs->SetParameter(3,mean*0.1);
+    //  myMIPs->SetParameter(2,nentries);
+      myMIPs->SetParameter(0,mean*0.1);
+      myMIPs->SetRange(mean*0.2,mean*2.0);
+        aHist->second->Fit(mylandau,"RQ");
+        mylandau->GetParameters(par);
+        myMIPs->SetParameters(par);
+        aHist->second->Fit(myMIPs,"RQ");
+        if(chis/ndf>1.6){
+      myMIPs->SetParameter(1,mean*0.8);
+      myMIPs->SetParameter(3,mean*0.1);
+    //  myMIPs->SetParameter(2,nentries);
+      myMIPs->SetParameter(0,mean*0.1);
+      myMIPs->SetRange(mean*0.2,mean*2.0);
+            aHist->second->Rebin(2);
+          aHist->second->Fit(myMIPs,"RQ");
+        }
+      }
+      myMIPs->GetParameters(par);
+//      double peak=myMIPs->GetMaximumX(0.8*par[1],1.5*par[1]);
+//      std::cout<<"Side:"<<aSide->first<<" ";
+//      std::cout<<"par(MPV):"<<par[1]<<" peak:"<<peak<<std::endl;
+//      par[1]=peak;
+ //     myMIPs->SetParameters(par);
+//      myMIPs->SetRange(par[1]*0.5,par[1]*3);
       
 
       par_error=myMIPs->GetParErrors();
@@ -243,7 +406,7 @@ bool DmpAlgBgoMips::RawTrack(){
       fBgoMips->ChiS.push_back(chis);
       
       aHist->second->Write();
-      delete aHist->second;
+//      delete aHist->second;
      } 
    }
   histFile->Close();
