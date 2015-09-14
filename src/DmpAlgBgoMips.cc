@@ -387,10 +387,10 @@ bool DmpAlgBgoMips::RawTrack(){
         }
       }
       myMIPs->GetParameters(par);
-//      double peak=myMIPs->GetMaximumX(0.8*par[1],1.5*par[1]);
+      double peak=myMIPs->GetMaximumX(0.8*par[1],1.5*par[1]);
 //      std::cout<<"Side:"<<aSide->first<<" ";
 //      std::cout<<"par(MPV):"<<par[1]<<" peak:"<<peak<<std::endl;
-//      par[1]=peak;
+      par[1]=peak;
  //     myMIPs->SetParameters(par);
 //      myMIPs->SetRange(par[1]*0.5,par[1]*3);
       
